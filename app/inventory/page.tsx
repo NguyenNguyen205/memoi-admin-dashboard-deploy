@@ -1,15 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
     Table, TableHeader, TableColumn, TableBody, TableRow, TableCell,
     Pagination, Spinner, Button, Chip, Modal, ModalContent, ModalHeader, ModalBody,
-    useDisclosure, Tabs, Tab
+    useDisclosure, Tabs, Tab, Input
 } from "@nextui-org/react";
 import { Layers, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { PageHeader } from "@/components/PageHeader";
+
+// --- GLOBAL UTILITY ---
+// Move this to lib/utils.ts later so you can use it on the Orders page too!
+export const formatSGD = (amount: number) => {
+    return new Intl.NumberFormat('en-SG', {
+        style: 'currency',
+        currency: 'SGD',
+    }).format(amount);
+};
 
 const ROWS_PER_PAGE = 10;
 
@@ -33,8 +42,6 @@ const fetchInventory = async (page: number, filter: "All" | "Low Stock") => {
     const from = (page - 1) * ROWS_PER_PAGE;
     const to = from + ROWS_PER_PAGE - 1;
 
-    // If "Low Stock" is selected, we use an !inner join to only return products 
-    // that have at least one variant with less than 5 stock.
     const variantQuery = filter === "Low Stock" ? "product_variants!inner" : "product_variants";
 
     let query = supabase
@@ -52,14 +59,75 @@ const fetchInventory = async (page: number, filter: "All" | "Low Stock") => {
     return { data: data as Product[], count: count ?? 0 };
 };
 
+// --- INLINE EDITING COMPONENT ---
+// This handles the instant click-to-edit UX for the stock numbers
+function InlineStockEditor({ variant, onUpdate }: { variant: ProductVariant, onUpdate: (id: number, stock: number) => Promise<void> }) {
+    const [isEditing, setIsEditing] = useState(false);
+    const [stockValue, setStockValue] = useState(variant.stock.toString());
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleSave = async () => {
+        const newStock = parseInt(stockValue, 10);
+
+        // If they typed letters or didn't change the number, just close it.
+        if (isNaN(newStock) || newStock === variant.stock) {
+            setIsEditing(false);
+            setStockValue(variant.stock.toString());
+            return;
+        }
+
+        setIsLoading(true);
+        await onUpdate(variant.id, newStock);
+        setIsLoading(false);
+        setIsEditing(false);
+    };
+
+    if (isEditing) {
+        return (
+            <Input
+                autoFocus
+                size="sm"
+                variant="faded"
+                value={stockValue}
+                onValueChange={setStockValue}
+                isDisabled={isLoading}
+                onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSave();
+                    if (e.key === "Escape") {
+                        setIsEditing(false);
+                        setStockValue(variant.stock.toString());
+                    }
+                }}
+                onBlur={handleSave} // Saves automatically if they click away
+                classNames={{ inputWrapper: "h-8 min-h-8 w-24" }}
+                endContent={isLoading ? <Spinner size="sm" /> : null}
+            />
+        );
+    }
+
+    return (
+        <div
+            className="cursor-pointer hover:bg-default-100 p-1 rounded-md inline-block px-2 transition-colors border border-transparent hover:border-default-200"
+            onClick={() => setIsEditing(true)}
+            title="Click to edit stock"
+        >
+            <Chip size="sm" color={variant.stock === 0 ? "danger" : (variant.stock < 5 ? "warning" : "success")} variant="dot" className="border-none cursor-pointer">
+                {variant.stock} in stock
+            </Chip>
+        </div>
+    );
+}
+
+
 export default function InventoryPage() {
+    const queryClient = useQueryClient();
     const [page, setPage] = useState(1);
     const [filter, setFilter] = useState<"All" | "Low Stock">("All");
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
     const { data, isLoading } = useQuery({
-        queryKey: ["inventory", page, filter], // Re-fetches automatically when filter changes
+        queryKey: ["inventory", page, filter],
         queryFn: () => fetchInventory(page, filter),
     });
 
@@ -68,6 +136,34 @@ export default function InventoryPage() {
     const handleViewVariants = (product: Product) => {
         setSelectedProduct(product);
         onOpen();
+    };
+
+    // --- INSTANT STOCK UPDATE LOGIC ---
+    const handleUpdateStock = async (variantId: number, newStock: number) => {
+        // 1. Update the database
+        const { error } = await supabase
+            .from("product_variants")
+            .update({ stock: newStock })
+            .eq("id", variantId);
+
+        if (error) {
+            alert("Failed to update stock. Please try again.");
+            return;
+        }
+
+        // 2. Instantly update the modal UI so the user doesn't see a flicker
+        setSelectedProduct((prev) => {
+            if (!prev) return prev;
+            return {
+                ...prev,
+                product_variants: prev.product_variants.map(v =>
+                    v.id === variantId ? { ...v, stock: newStock } : v
+                )
+            };
+        });
+
+        // 3. Silently refresh the main table in the background to update the Total Stock numbers
+        queryClient.invalidateQueries({ queryKey: ["inventory"] });
     };
 
     return (
@@ -81,7 +177,7 @@ export default function InventoryPage() {
                     selectedKey={filter}
                     onSelectionChange={(key) => {
                         setFilter(key as "All" | "Low Stock");
-                        setPage(1); // Reset pagination on filter change
+                        setPage(1);
                     }}
                     color="danger"
                     variant="light"
@@ -125,7 +221,6 @@ export default function InventoryPage() {
                     >
                         {(product) => {
                             const totalStock = product.product_variants.reduce((acc, variant) => acc + (variant.stock || 0), 0);
-                            // Visually flag the row if it was caught in the low stock filter
                             const hasLowStockVariant = product.product_variants.some(v => v.stock < 5);
 
                             return (
@@ -173,23 +268,30 @@ export default function InventoryPage() {
                                         <table className="w-full text-sm text-left">
                                             <thead className="bg-default-100 text-default-600">
                                                 <tr>
-                                                    <th className="px-4 py-2 font-medium">Size / Variant</th>
-                                                    <th className="px-4 py-2 font-medium">Stock Level</th>
+                                                    <th className="px-4 py-3 font-medium">Size / Variant</th>
+                                                    <th className="px-4 py-3 font-medium">Price</th>
+                                                    <th className="px-4 py-3 font-medium">Stock Level</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-divider">
                                                 {selectedProduct.product_variants.map((variant) => (
-                                                    <tr key={variant.id} className={variant.stock < 5 ? "bg-danger/10" : ""}>
-                                                        <td className="px-4 py-3">{variant.size || "Default"}</td>
+                                                    <tr key={variant.id} className={variant.stock < 5 ? "bg-danger/5" : ""}>
+                                                        <td className="px-4 py-3 font-medium">{variant.size || "Default"}</td>
+                                                        <td className="px-4 py-3 text-default-500">{formatSGD(variant.price || 0)}</td>
                                                         <td className="px-4 py-3">
-                                                            <Chip size="sm" color={variant.stock === 0 ? "danger" : (variant.stock < 5 ? "warning" : "success")} variant="dot" className="border-none">
-                                                                {variant.stock} in stock
-                                                            </Chip>
+                                                            {/* 🔥 MAGIC INLINE EDITOR 🔥 */}
+                                                            <InlineStockEditor
+                                                                variant={variant}
+                                                                onUpdate={handleUpdateStock}
+                                                            />
                                                         </td>
                                                     </tr>
                                                 ))}
                                             </tbody>
                                         </table>
+                                        <div className="p-3 bg-default-50 text-xs text-default-400 border-t border-divider text-center">
+                                            💡 Click any stock pill to edit instantly. Hit Enter to save.
+                                        </div>
                                     </div>
                                 ) : (
                                     <div className="text-center p-4 text-default-500 bg-default-100 rounded-lg">No variants found.</div>
