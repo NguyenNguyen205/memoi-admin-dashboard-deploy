@@ -4,7 +4,7 @@
 import { supabase } from "@/lib/supabase";
 import { format, addDays } from "date-fns";
 
-const EP_BASE = process.env.EP_BASE_URL ?? "https://demo.connect.easyparcel.sg/?ac=";
+const EP_BASE = process.env.EP_BASE_URL ?? "https://connect.easyparcel.sg/?ac=";
 const API_KEY = process.env.EP_API_KEY ?? "";
 
 // --- UTILS ---
@@ -39,6 +39,8 @@ async function callEP<T>(action: string, body: Record<string, unknown> = {}): Pr
     });
 
     const raw = await res.text();
+    console.log(raw);
+
     if (!res.ok) throw new Error(`EasyParcel HTTP ${res.status}: ${res.statusText}`);
 
     let json: any;
@@ -82,14 +84,14 @@ export async function processBulkFulfillment(orderIds: string[], defaultWeight: 
 
         for (const order of rawOrders) {
 
-            // 📍 NEW SENDER LOCATION: Joo Chiat Road
             const SENDER = {
-                name: "Your Store Name",
+                name: "Nan",
                 contact: "87184113",
                 postcode: "427525",
                 country: "SG",
                 state: "SG",
-                unit: "01",
+                addr1: "271B Joo Chiat Road", // Back where it belongs!
+                unit: "",
             };
 
             // 📍 DYNAMIC RECEIVER WATERFALL (From DB)
@@ -102,11 +104,16 @@ export async function processBulkFulfillment(orderIds: string[], defaultWeight: 
             const receiverCountry = order.shipping_country || billing?.country || user?.country || "SG";
             const receiverState = order.shipping_state || billing?.state || user?.state || "SG";
 
+            const receiverAddr = order.shipping_address_line_1 || billing?.address || user?.address || "No address provided";
+
             if (!receiverZip) throw new Error(`Order ${order.order_number} has no zip code.`);
 
             const collectionDate = format(addDays(new Date(), 1), "yyyy-MM-dd");
             const contentDesc = order.order_items?.map((item: any) => `${item.quantity}x ${item.product_name}`).join(", ") || "Apparel";
 
+            const pkgLength = 50;
+            const pkgWidth = 50;
+            const pkgHeight = 50;
             // Step 2: Rate Check
             const rateData = await callEP<any>("EPRateCheckingBulk", {
                 bulk: [{
@@ -117,9 +124,9 @@ export async function processBulkFulfillment(orderIds: string[], defaultWeight: 
                     send_state: receiverState,
                     send_country: receiverCountry,
                     weight: defaultWeight,
-                    width: 0,
-                    length: 0,
-                    height: 0,
+                    width: pkgWidth,
+                    length: pkgLength,
+                    height: pkgHeight,
                     date_coll: collectionDate
                 }]
             });
@@ -141,27 +148,33 @@ export async function processBulkFulfillment(orderIds: string[], defaultWeight: 
                 bulk: [{
                     service_id: cheapest.service_id,
                     weight: defaultWeight,
-                    width: 0,
-                    length: 0,
-                    height: 0,
+                    width: pkgWidth,
+                    length: pkgLength,
+                    height: pkgHeight,
                     content: contentDesc.substring(0, 30),
                     value: order.total,
 
+                    // SENDER
                     pick_name: SENDER.name,
                     pick_contact: SENDER.contact,
                     pick_mobile: "",
                     pick_company: "",
+                    pick_addr1: SENDER.addr1,      // 🚨 REQUIRED
                     pick_unit: SENDER.unit,
                     pick_code: SENDER.postcode,
                     pick_country: SENDER.country,
+                    pick_state: SENDER.state,
 
+                    // RECEIVER
                     send_name: receiverName,
-                    send_contact: receiverPhone.replace(/\D/g, ""), // Strip special characters
+                    send_contact: receiverPhone.replace(/\D/g, ""),
                     send_mobile: "",
                     send_company: "",
-                    send_unit: "01",
+                    send_addr1: receiverAddr.substring(0, 50),
+                    send_unit: "",
                     send_code: receiverZip,
                     send_country: receiverCountry,
+                    send_state: receiverState,
 
                     collect_date: collectionDate
                 }]
