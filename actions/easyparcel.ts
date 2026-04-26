@@ -56,6 +56,14 @@ async function callEP<T>(action: string, body: Record<string, unknown> = {}): Pr
     return json as T;
 }
 
+function removeVietnameseTones(str) {
+    return str
+        .normalize('NFD') // separate accent from letter
+        .replace(/[\u0300-\u036f]/g, '') // remove all accents
+        .replace(/đ/g, 'd')
+        .replace(/Đ/g, 'D');
+}
+
 // --- MAIN ACTION: DYNAMIC ADDRESSES ---
 export async function processBulkFulfillment(orderIds: string[], defaultWeight: number = 1) {
     try {
@@ -111,9 +119,9 @@ export async function processBulkFulfillment(orderIds: string[], defaultWeight: 
             const collectionDate = format(addDays(new Date(), 1), "yyyy-MM-dd");
             const contentDesc = order.order_items?.map((item: any) => `${item.quantity}x ${item.product_name}`).join(", ") || "Apparel";
 
-            const pkgLength = 50;
-            const pkgWidth = 50;
-            const pkgHeight = 50;
+            const pkgLength = 26;
+            const pkgWidth = 37;
+            const pkgHeight = 10;
             // Step 2: Rate Check
             const rateData = await callEP<any>("EPRateCheckingBulk", {
                 bulk: [{
@@ -166,7 +174,7 @@ export async function processBulkFulfillment(orderIds: string[], defaultWeight: 
                     pick_state: SENDER.state,
 
                     // RECEIVER
-                    send_name: receiverName,
+                    send_name: removeVietnameseTones(receiverName),
                     send_contact: receiverPhone.replace(/\D/g, ""),
                     send_mobile: "",
                     send_company: "",

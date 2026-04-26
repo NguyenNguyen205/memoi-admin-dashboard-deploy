@@ -622,7 +622,7 @@ export default function OrdersPage() {
         setFulfillResult(null);
 
         const ids = getSelectedIds();
-        const result = await processBulkFulfillment(ids, Number(weight));
+        const result = await processBulkFulfillment(ids, 1);
 
         setIsFulfilling(false);
 
