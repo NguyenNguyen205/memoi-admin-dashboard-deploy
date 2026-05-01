@@ -3,6 +3,8 @@
 
 import { supabase } from "@/lib/supabase";
 import { format, addDays } from "date-fns";
+import { EmailService } from "@/lib/EmailService";
+const emailService = new EmailService();
 
 const EP_BASE = process.env.EP_BASE_URL ?? "https://connect.easyparcel.sg/?ac=";
 const API_KEY = process.env.EP_API_KEY ?? "";
@@ -79,11 +81,11 @@ export async function processBulkFulfillment(orderIds: string[], defaultWeight: 
         const { data: rawOrders, error: dbError } = await supabase
             .from("orders")
             .select(`
-        id, order_number, total, shipping_address_line_1, shipping_city, shipping_state, shipping_zip_postal_code, shipping_country, phone_number,
-        billing_info (first_name, last_name, phone_number, address, city, state, zip_code, country),
-        users (first_name, last_name, phone_number, address, city, state, zip_code, country),
-        order_items (product_name, quantity)
-      `)
+    id, order_number, total, shipping_address_line_1, shipping_city, shipping_state, shipping_zip_postal_code, shipping_country, phone_number, email,
+    billing_info (first_name, last_name, phone_number, address, city, state, zip_code, country),
+    users (first_name, last_name, phone_number, address, city, state, zip_code, country, email),
+    order_items (product_name, quantity)
+  `)
             .in("id", orderIds);
 
         if (dbError || !rawOrders) throw new Error("Failed to fetch orders from database.");
@@ -93,7 +95,7 @@ export async function processBulkFulfillment(orderIds: string[], defaultWeight: 
         for (const order of rawOrders) {
 
             const SENDER = {
-                name: "Nan",
+                name: "MEMOI OFFICIAL",
                 contact: "87184113",
                 postcode: "427525",
                 country: "SG",
@@ -119,8 +121,8 @@ export async function processBulkFulfillment(orderIds: string[], defaultWeight: 
             const collectionDate = format(addDays(new Date(), 1), "yyyy-MM-dd");
             const contentDesc = order.order_items?.map((item: any) => `${item.quantity}x ${item.product_name}`).join(", ") || "Apparel";
 
-            const pkgLength = 26;
-            const pkgWidth = 37;
+            const pkgLength = 37;
+            const pkgWidth = 26;
             const pkgHeight = 10;
             // Step 2: Rate Check
             const rateData = await callEP<any>("EPRateCheckingBulk", {
@@ -222,7 +224,23 @@ export async function processBulkFulfillment(orderIds: string[], defaultWeight: 
                 })
                 .eq("id", order.id);
 
+            // 📧 STEP 6: SEND THE TRACKING EMAIL
+            const customerEmail = order.email || user?.email;
+
+            // Only send if we have a valid email and a live tracking link
+            if (customerEmail && trackingUrl) {
+                await emailService.sendOrderTracking(customerEmail, {
+                    customerName: receiverName,
+                    orderNumber: orderNum,
+                    trackingLink: trackingUrl,
+                    carrierName: cheapest.courier_name || "Premium Courier",
+                    estimatedDelivery: cheapest.delivery || "1-3 working days"
+                });
+            }
+
             updatedCount++;
+
+
         }
 
         return { success: true, count: updatedCount, message: `Successfully fulfilled ${updatedCount} orders.` };
@@ -249,6 +267,10 @@ export async function getFulfillmentPreview(orderIds: string[], defaultWeight: n
         let totalCost = 0;
         let rateError = "";
 
+        const pkgLength = 37;
+        const pkgWidth = 26;
+        const pkgHeight = 10;
+
         // Calculate rates dynamically based on the DB addresses
         if (rawOrders) {
             for (const order of rawOrders) {
@@ -267,6 +289,11 @@ export async function getFulfillmentPreview(orderIds: string[], defaultWeight: n
                         send_state: order.shipping_state || billing?.state || user?.state || "SG",
                         send_country: order.shipping_country || billing?.country || user?.country || "SG",
                         weight: defaultWeight,
+
+                        width: pkgWidth,
+                        length: pkgLength,
+                        height: pkgHeight,
+
                     }]
                 });
 

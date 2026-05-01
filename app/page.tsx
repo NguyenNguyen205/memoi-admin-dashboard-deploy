@@ -77,7 +77,7 @@ export default function DashboardPage() {
   });
 
   const kpis = [
-    { title: "Revenue (30d)", value: `$${data?.totalRevenue.toLocaleString() || "0"}`, icon: DollarSign, color: "text-success" },
+    { title: "Revenue (30d)", value: `S$${data?.totalRevenue.toLocaleString() || "0"}`, icon: DollarSign, color: "text-success" },
     { title: "Total Orders", value: data?.totalOrders || "0", icon: ShoppingCart, color: "text-primary" },
     { title: "Pending Exchanges", value: data?.pendingExchanges || "0", icon: ArrowRightLeft, color: "text-warning" },
     { title: "Low Stock Items", value: data?.lowStock || "0", icon: AlertCircle, color: "text-danger" },
@@ -130,7 +130,7 @@ export default function DashboardPage() {
                       fontSize={12}
                       tickLine={false}
                       axisLine={false}
-                      tickFormatter={(value) => `$${value}`}
+                      tickFormatter={(value) => `S$${value}`}
                     />
                     <Tooltip
                       contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '8px' }}
