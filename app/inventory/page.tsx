@@ -10,15 +10,7 @@ import {
 import { Layers, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { PageHeader } from "@/components/PageHeader";
-
-// --- GLOBAL UTILITY ---
-// Move this to lib/utils.ts later so you can use it on the Orders page too!
-export const formatSGD = (amount: number) => {
-    return new Intl.NumberFormat('en-SG', {
-        style: 'currency',
-        currency: 'SGD',
-    }).format(amount);
-};
+import { formatSGD } from "@/lib/utils";
 
 const ROWS_PER_PAGE = 10;
 

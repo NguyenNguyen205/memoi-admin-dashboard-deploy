@@ -477,6 +477,7 @@ import { Search, ExternalLink, Eye, Package, Truck, AlertCircle, FileText, MapPi
 import { supabase } from "@/lib/supabase";
 import { PageHeader } from "@/components/PageHeader";
 import { processBulkFulfillment, getFulfillmentPreview } from "@/actions/easyparcel";
+import { CreateOrderModal } from "./CreateOrderModal";
 
 // --- STRICT INTERFACES ---
 interface OrderItem {
@@ -667,19 +668,22 @@ export default function OrdersPage() {
                     />
                 </div>
 
-                {selectedCount > 0 && isClient && (
-                    <Button
-                        color="primary"
-                        endContent={<Truck size={18} />}
-                        onClick={() => {
-                            setFulfillResult(null); // Reset modal state on open
-                            onFulfillOpen();
-                        }}
-                        className="shadow-lg shadow-primary/30 font-semibold"
-                    >
-                        Fulfill {selectedCount} Order{selectedCount > 1 ? 's' : ''}
-                    </Button>
-                )}
+                <div className="flex gap-3">
+                    <CreateOrderModal />
+                    {selectedCount > 0 && isClient && (
+                        <Button
+                            color="primary"
+                            endContent={<Truck size={18} />}
+                            onClick={() => {
+                                setFulfillResult(null); // Reset modal state on open
+                                onFulfillOpen();
+                            }}
+                            className="shadow-lg shadow-primary/30 font-semibold"
+                        >
+                            Fulfill {selectedCount} Order{selectedCount > 1 ? 's' : ''}
+                        </Button>
+                    )}
+                </div>
             </div>
 
             <div className="flex-1 bg-content1 p-4 rounded-xl border border-divider">

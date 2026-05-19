@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(node check-products.mjs)",
+      "Bash(node check-variants.mjs)",
+      "Bash(node check-order-items.mjs)"
+    ]
+  }
+}
